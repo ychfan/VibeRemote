@@ -453,7 +453,7 @@ final class RemoteInputHandler {
 
     private func startRemoteKeepAliveIfNeeded() {
         guard remoteKeepAliveTimer == nil,
-              !remoteIdleTracker.isEmpty else { return }
+              remoteIdleTracker.hasLiveDeadlines else { return }
 
         let timer = Timer(timeInterval: 45, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated {
@@ -486,7 +486,7 @@ final class RemoteInputHandler {
         remoteIdleTimer?.invalidate()
         remoteIdleTimer = nil
         guard let timeout = remoteIdleTimeout.interval,
-              !remoteIdleTracker.isEmpty else { return }
+              remoteIdleTracker.hasLiveDeadlines else { return }
 
         // Check often enough that a five-minute choice behaves like five minutes, while the
         // per-device tracker guarantees only one close request until real activity resumes.

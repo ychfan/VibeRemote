@@ -508,8 +508,11 @@ verification. Do not infer that from successful Feature writes. The shared Auto 
 setting controls an idle deadline (5/15/30 minutes or Never); the default is 5 minutes and the
 legacy `firstGenerationIdleTimeoutSeconds` key preserves saved choices. Every real button press
 resets only that physical remote's deadline. At expiry, stop keepalive and release its HID
-interfaces before asking `IOBluetoothDevice` to close the link. Unknown/charging-only devices
-never enter this path; battery polling remains disabled.
+interfaces before asking `IOBluetoothDevice` to close the link. macOS reconnects an awake
+remote right after that close, so `RemoteIdleTracker` keeps the expiry across the released
+interval: the reopened interfaces restart neither keepalive nor the deadline, and the remote
+falls into its normal firmware sleep. Only a real button press clears the expiry.
+Unknown/charging-only devices never enter this path; battery polling remains disabled.
 
 ### Bluetooth topology changes
 

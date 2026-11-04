@@ -787,6 +787,32 @@ final class ModelTests: XCTestCase {
         XCTAssertTrue(tracker.isEmpty)
     }
 
+    func testIdleExpiryOutlivesTheReconnectAfterIdleClose() {
+        var tracker = RemoteIdleTracker()
+        tracker.synchronize(deviceKeys: ["remote"], now: 0)
+        XCTAssertEqual(tracker.takeDueDisconnects(now: 300, timeout: 300), ["remote"])
+        // The idle close releases every interface; macOS then reconnects the still-awake remote.
+        tracker.synchronize(deviceKeys: [], now: 300)
+        tracker.synchronize(deviceKeys: ["remote"], now: 301)
+        XCTAssertFalse(tracker.shouldKeepAlive(deviceKey: "remote"))
+        XCTAssertFalse(tracker.hasLiveDeadlines)
+        XCTAssertEqual(tracker.takeDueDisconnects(now: 10_000, timeout: 300), [])
+
+        // A real press clears the expiry, and that survives a later release and reconnect.
+        tracker.recordActivity(deviceKey: "remote", now: 20_000)
+        tracker.synchronize(deviceKeys: [], now: 20_001)
+        tracker.synchronize(deviceKeys: ["remote"], now: 20_002)
+        XCTAssertTrue(tracker.shouldKeepAlive(deviceKey: "remote"))
+        XCTAssertTrue(tracker.hasLiveDeadlines)
+
+        // Changing the timeout starts every remote afresh.
+        XCTAssertEqual(tracker.takeDueDisconnects(now: 20_302, timeout: 300), ["remote"])
+        tracker.synchronize(deviceKeys: [], now: 20_302)
+        tracker.reset(now: 30_000)
+        tracker.synchronize(deviceKeys: ["remote"], now: 30_000)
+        XCTAssertTrue(tracker.shouldKeepAlive(deviceKey: "remote"))
+    }
+
     func testBothGenerationsWaitForOutputDrainWithBoundedTimeout() {
         XCTAssertEqual(
             RemoteInputHandler.voiceTailReleaseTimeout(

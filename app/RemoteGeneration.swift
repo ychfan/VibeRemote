@@ -65,45 +65,47 @@ enum RemoteIdleTimeout: Int, CaseIterable, Sendable {
 /// Per-physical-remote idle state. Interfaces for one remote arrive independently, so the
 /// tracker keys by Bluetooth address and emits at most one disconnect request per idle period.
 struct RemoteIdleTracker: Sendable {
-    private struct Entry: Sendable {
-        var lastActivity: TimeInterval
-        var disconnectRequested = false
-    }
-
-    private var entries: [String: Entry] = [:]
+    private var lastActivity: [String: TimeInterval] = [:]
+    /// Outlives the interface release, so the reconnect right after the idle close restarts
+    /// neither keepalive nor the deadline. Only a real button press (or a reset) clears it.
+    private var expired: Set<String> = []
 
     mutating func synchronize(deviceKeys: Set<String>, now: TimeInterval) {
-        entries = entries.filter { deviceKeys.contains($0.key) }
-        for key in deviceKeys where entries[key] == nil {
-            entries[key] = Entry(lastActivity: now)
+        lastActivity = lastActivity.filter { deviceKeys.contains($0.key) }
+        for key in deviceKeys where lastActivity[key] == nil {
+            lastActivity[key] = now
         }
     }
 
     mutating func recordActivity(deviceKey: String, now: TimeInterval) {
-        entries[deviceKey] = Entry(lastActivity: now)
+        lastActivity[deviceKey] = now
+        expired.remove(deviceKey)
     }
 
     mutating func reset(now: TimeInterval) {
-        for key in entries.keys {
-            entries[key] = Entry(lastActivity: now)
+        for key in lastActivity.keys {
+            lastActivity[key] = now
         }
+        expired.removeAll()
     }
 
     mutating func takeDueDisconnects(now: TimeInterval, timeout: TimeInterval?) -> [String] {
         guard let timeout else { return [] }
-        var due: [String] = []
-        for (key, entry) in entries where !entry.disconnectRequested && now - entry.lastActivity >= timeout {
-            entries[key]?.disconnectRequested = true
-            due.append(key)
+        let due = lastActivity.compactMap { key, last in
+            !expired.contains(key) && now - last >= timeout ? key : nil
         }
+        expired.formUnion(due)
         return due.sorted()
     }
 
     func shouldKeepAlive(deviceKey: String) -> Bool {
-        entries[deviceKey]?.disconnectRequested == false
+        lastActivity[deviceKey] != nil && !expired.contains(deviceKey)
     }
 
-    var isEmpty: Bool { entries.isEmpty }
+    /// Some remote is still counting down: keepalive and the idle check have work to do.
+    var hasLiveDeadlines: Bool { lastActivity.keys.contains { !expired.contains($0) } }
+
+    var isEmpty: Bool { lastActivity.isEmpty }
 }
 
 /// The two Siri Remote hardware families VibeRemote supports.
